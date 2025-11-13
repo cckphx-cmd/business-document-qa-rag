@@ -717,8 +717,289 @@ with tab1:
 
 # TAB 2: Brand Voice Assistant
 with tab2:
-    if not FEATURES['brand_voice']:
-        st.info("🚧 **Brand Voice Assistant - Coming Soon!**")
+    st.markdown("### 🎨 Brand Voice Assistant")
+    st.markdown("Transform your communications to match your company's brand voice")
+    
+    # Initialize brand guide state
+    if 'brand_guide_loaded' not in st.session_state:
+        st.session_state['brand_guide_loaded'] = False
+    if 'brand_guide_name' not in st.session_state:
+        st.session_state['brand_guide_name'] = None
+    
+    # Brand Guide Upload Section
+    st.markdown("---")
+    st.markdown("#### 📚 Brand Guidelines")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        if st.session_state['brand_guide_loaded']:
+            st.success(f"✓ Brand guide loaded: {st.session_state['brand_guide_name']}")
+        else:
+            st.info("💡 Upload your brand/style guide to ensure consistent messaging")
+    
+    with col2:
+        if st.session_state['brand_guide_loaded']:
+            if st.button("🗑️ Remove Guide", key="remove_brand_guide"):
+                try:
+                    client = get_chroma_client()
+                    client.delete_collection("brand_guidelines")
+                except:
+                    pass
+                st.session_state['brand_guide_loaded'] = False
+                st.session_state['brand_guide_name'] = None
+                st.rerun()
+    
+    if not st.session_state['brand_guide_loaded']:
+        brand_file = st.file_uploader(
+            "Upload Brand/Style Guide (PDF)",
+            type="pdf",
+            key="brand_guide_uploader",
+            help="Upload your company's brand guidelines, style guide, or tone of voice document"
+        )
+        
+        if brand_file:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("📄 Reading brand guidelines...")
+            progress_bar.progress(0.2)
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(brand_file.getbuffer())
+                tmp_path = tmp.name
+            
+            try:
+                # Load document
+                status_text.text("📖 Processing guidelines...")
+                progress_bar.progress(0.4)
+                
+                loader = PyPDFLoader(tmp_path)
+                docs = loader.load()
+                
+                if docs and len(docs) > 0:
+                    # Split into chunks
+                    status_text.text("✂️ Extracting voice patterns...")
+                    progress_bar.progress(0.6)
+                    
+                    splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=500,
+                        chunk_overlap=50
+                    )
+                    chunks = splitter.split_documents(docs)
+                    
+                    if chunks and len(chunks) > 0:
+                        # Store in ChromaDB
+                        status_text.text("💾 Storing brand guidelines...")
+                        progress_bar.progress(0.8)
+                        
+                        client = get_chroma_client()
+                        
+                        # Delete existing collection if present
+                        try:
+                            client.delete_collection("brand_guidelines")
+                        except:
+                            pass
+                        
+                        # Create new collection
+                        brand_collection = client.create_collection(
+                            name="brand_guidelines",
+                            metadata={"description": "Brand voice and style guidelines"}
+                        )
+                        
+                        # Prepare embeddings
+                        embeddings = OpenAIEmbeddings()
+                        docs_text = [chunk.page_content for chunk in chunks]
+                        embeddings_list = embeddings.embed_documents(docs_text)
+                        
+                        # Add to collection
+                        brand_collection.add(
+                            documents=docs_text,
+                            embeddings=embeddings_list,
+                            metadatas=[{"source": brand_file.name, "chunk": i} for i in range(len(chunks))],
+                            ids=[f"brand_{i}" for i in range(len(chunks))]
+                        )
+                        
+                        st.session_state['brand_guide_loaded'] = True
+                        st.session_state['brand_guide_name'] = brand_file.name
+                        
+                        progress_bar.progress(1.0)
+                        status_text.text(f"✅ Success! Loaded {len(chunks)} voice patterns from {len(docs)} pages")
+                        
+                        time.sleep(1)
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("Could not extract text from the PDF")
+                else:
+                    st.error("PDF appears to be empty")
+                    
+            except Exception as e:
+                st.error(f"Error processing brand guide: {str(e)}")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+    
+    # Message Transformation Section
+    st.markdown("---")
+    st.markdown("#### ✨ Transform Your Message")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        message_type = st.selectbox(
+            "Message Type",
+            [
+                "Email - Customer",
+                "Email - Internal",
+                "Slack/Teams Message",
+                "Social Media Post",
+                "Customer Support Response",
+                "Press Release",
+                "Marketing Copy",
+                "Documentation"
+            ],
+            help="Context helps tailor the transformation"
+        )
+    
+    with col2:
+        tone_preference = st.selectbox(
+            "Desired Tone",
+            [
+                "Professional",
+                "Friendly & Approachable",
+                "Technical & Precise",
+                "Empathetic & Supportive",
+                "Urgent & Action-Oriented",
+                "Casual & Conversational"
+            ]
+        )
+    
+    # Input message
+    user_message = st.text_area(
+        "Your Draft Message",
+        placeholder="Enter the message you want to transform using your brand voice...\n\nExample: Hey team, servers going down Friday night for updates.",
+        height=180,
+        key="brand_message_input"
+    )
+    
+    # Transform button
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        transform_button = st.button("✨ Transform Message", type="primary", use_container_width=True)
+    
+    if transform_button and user_message:
+        with st.spinner("🎨 Applying brand voice..."):
+            try:
+                # Get brand context if available
+                brand_context = ""
+                using_brand_guide = False
+                
+                if st.session_state['brand_guide_loaded']:
+                    client = get_chroma_client()
+                    brand_collection = client.get_collection("brand_guidelines")
+                    embeddings = OpenAIEmbeddings()
+                    
+                    # Search for relevant brand guidelines
+                    query_text = f"{message_type} {tone_preference} communication style"
+                    query_embedding = embeddings.embed_query(query_text)
+                    
+                    results = brand_collection.query(
+                        query_embeddings=[query_embedding],
+                        n_results=3
+                    )
+                    
+                    if results['documents'] and results['documents'][0]:
+                        brand_context = "\n\n".join(results['documents'][0])
+                        using_brand_guide = True
+                
+                # Create transformation prompt
+                llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+                
+                if using_brand_guide:
+                    prompt = f"""You are a professional brand voice consultant. Transform the user's draft message to match the company's brand guidelines.
+
+BRAND GUIDELINES:
+{brand_context}
+
+MESSAGE TYPE: {message_type}
+DESIRED TONE: {tone_preference}
+
+ORIGINAL DRAFT:
+{user_message}
+
+INSTRUCTIONS:
+1. Carefully follow the brand voice patterns from the guidelines
+2. Maintain the core message and all key information
+3. Match the {tone_preference} tone
+4. Format appropriately for {message_type}
+5. Use brand-specific language, phrases, and style
+6. Keep it professional and polished
+7. Ensure clarity and impact
+
+TRANSFORMED MESSAGE:"""
+                else:
+                    prompt = f"""Transform this draft message into a professional {message_type} with a {tone_preference} tone.
+
+ORIGINAL DRAFT:
+{user_message}
+
+INSTRUCTIONS:
+- Keep all important information
+- Use {tone_preference} tone throughout
+- Format for {message_type}
+- Make it clear, professional, and effective
+- Add appropriate greeting/closing if needed
+
+TRANSFORMED MESSAGE:"""
+                
+                response = llm.invoke(prompt)
+                transformed = response.content.strip()
+                
+                # Display results
+                st.markdown("---")
+                st.markdown("### 📊 Transformation Results")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**📝 Original Draft:**")
+                    st.markdown(f'<div class="answer-box" style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 1rem; border-radius: 8px;">{user_message}</div>', unsafe_allow_html=True)
+                    st.caption(f"Words: {len(user_message.split())}")
+                
+                with col2:
+                    st.markdown("**✨ Brand Voice Version:**")
+                    st.markdown(f'<div class="answer-box" style="background: #dcfce7; border-left: 4px solid #22c55e; padding: 1rem; border-radius: 8px;">{transformed}</div>', unsafe_allow_html=True)
+                    st.caption(f"Words: {len(transformed.split())}")
+                
+                # Show which guidelines were used
+                if using_brand_guide:
+                    with st.expander("📚 Brand Guidelines Applied"):
+                        st.markdown("**Relevant sections from your brand guide:**")
+                        for i, section in enumerate(results['documents'][0], 1):
+                            st.markdown(f"**Section {i}:**")
+                            st.caption(section[:400] + ("..." if len(section) > 400 else ""))
+                            st.markdown("---")
+                else:
+                    st.info("💡 Upload your brand guide to use company-specific voice patterns!")
+                
+                # Copy functionality
+                st.markdown("---")
+                st.markdown("**📋 Copy Transformed Message:**")
+                st.code(transformed, language=None)
+                st.caption("↑ Select all and copy (Cmd/Ctrl + C)")
+                
+                # Save to session for potential export
+                if 'brand_transformations' not in st.session_state:
+                    st.session_state['brand_transformations'] = []
+                
+                st.session_state['brand_transformations'].append({
+                    'original': user_message,
+                    'transformed': transformed,
+                    'type': message_type,
+                    'tone': tone_preference,
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'used
         st.markdown("""
         This feature will help you:
         - Upload company style guides
