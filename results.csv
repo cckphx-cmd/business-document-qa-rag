@@ -1,0 +1,22 @@
+id,type,question,answer,response_time_s,answer_word_count,keyword_match_ratio
+1,factual,What are the payment terms?,Net 30 days from invoice date. Late payments incur 1.5% monthly interest.,1.402,12,1.0
+2,factual,What is the contract's effective date?,"The contract's effective date is January 1, 2024.",1.623,8,1.0
+3,factual,What is the termination notice period?,The termination notice period is 30 days written notice.,0.834,9,0.667
+4,factual,Who are the parties to the agreement?,The parties to the agreement are Acme Corp (Vendor) and Example LLC (Client).,1.319,13,0.333
+5,factual,What is the service scope or deliverables?,"The service scope includes data analytics services and monthly reports, while the deliverables are a KPI dashboard, monthly summary, and executive presentation.",1.536,22,1.0
+6,factual,What are the late payment penalties or interest?,Late payments incur 1.5% monthly interest.,1.327,6,0.667
+7,factual,What is the total contract value or budget?,"The total contract value or budget is $50,000 (fixed fee).",1.537,10,0.75
+8,factual,What warranties are provided?,I cannot find that in the provided documents.,0.722,8,0.0
+9,factual,What is the governing law or jurisdiction?,The governing law is the State of Arizona.,2.386,8,0.5
+10,factual,Are there any confidentiality or NDA obligations?,"Yes, both parties agree to keep information confidential as per the Confidentiality clause in the Master Services Agreement.",0.994,18,0.333
+11,analytical,Compare the vendor responsibilities to the client responsibilities.,"Vendor responsibilities include providing data analytics services and monthly reports, ensuring reports include KPIs and pass accuracy checks, and issuing invoices monthly. Client responsibilities include reviewing deliverables within 5 business days, signing off via email, and making payments within 30 days from the invoice date.",1.111,45,1.0
+12,analytical,Is the proposed pricing consistent with the stated deliverables? Explain briefly.,"Yes, the proposed pricing of $50,000 for the project is consistent with the stated deliverables of a KPI dashboard, monthly summary, and executive presentation as outlined in the Statement of Work.",1.344,31,0.667
+13,analytical,Assess whether the termination clause creates any material risk for the client.,The termination clause in the Master Services Agreement allows either party to terminate with 30 days written notice. This clause does not create any material risk for the client as it provides a reasonable timeframe for both parties to end the agreement if needed.,1.739,44,1.0
+14,analytical,Which option is more cost-effective and why: fixed fee or time-and-materials?,"Fixed fee is more cost-effective because it provides a set total value of $50,000 for the project, ensuring predictability and no additional costs. Time-and-materials could lead to higher costs if the project takes longer than expected or requires more resources.",1.026,40,1.0
+15,analytical,Are the acceptance criteria measurable? Provide a brief justification.,"Yes, the acceptance criteria are measurable. The reports must include KPIs and pass accuracy checks, which are specific and quantifiable requirements that can be objectively evaluated.",0.637,26,1.0
+16,summary,Summarize the payment schedule in one or two sentences.,"Invoices for the project will be issued monthly with a total fixed fee of $50,000. Payment terms are net 30 days from the invoice date, with late payments incurring a 1.5% monthly interest.",1.614,33,0.5
+17,summary,Summarize the project timeline and key milestones.,"Project Timeline: Phase 1 (Jan-Feb), Phase 2 (Mar-Apr), Final Delivery: April 30, 2024.
+Key Milestones: Phase 1 (Jan-Feb), Phase 2 (Mar-Apr), Final Delivery: April 30, 2024.",0.868,26,1.0
+18,summary,Provide a brief summary of the scope of work.,The scope of work involves Acme Corp providing data analytics services and monthly reports to Example LLC.,1.079,17,0.667
+19,summary,Summarize the main risks identified and any mitigations.,The main risks identified are data quality and stakeholder availability. The mitigation strategies include weekly check-ins and data validation.,0.63,19,1.0
+20,summary,Summarize the approval and signature process.,The approval process involves the client reviewing the deliverables within 5 business days and then signing off via email. The signatures required are from the Client COO and Vendor Account Director.,1.005,31,0.333
