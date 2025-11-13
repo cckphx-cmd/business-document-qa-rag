@@ -1,0 +1,124 @@
+{
+  "questions": [
+    {
+      "id": 1,
+      "question": "What are the payment terms?",
+      "type": "factual",
+      "expected_answer_keywords": ["net", "days", "invoice"]
+    },
+    {
+      "id": 2,
+      "question": "What is the contract's effective date?",
+      "type": "factual",
+      "expected_answer_keywords": ["effective", "date"]
+    },
+    {
+      "id": 3,
+      "question": "What is the termination notice period?",
+      "type": "factual",
+      "expected_answer_keywords": ["terminate", "notice", "days"]
+    },
+    {
+      "id": 4,
+      "question": "Who are the parties to the agreement?",
+      "type": "factual",
+      "expected_answer_keywords": ["party", "parties", "between"]
+    },
+    {
+      "id": 5,
+      "question": "What is the service scope or deliverables?",
+      "type": "factual",
+      "expected_answer_keywords": ["scope", "deliverable", "services"]
+    },
+    {
+      "id": 6,
+      "question": "What are the late payment penalties or interest?",
+      "type": "factual",
+      "expected_answer_keywords": ["late", "interest", "penalt"]
+    },
+    {
+      "id": 7,
+      "question": "What is the total contract value or budget?",
+      "type": "factual",
+      "expected_answer_keywords": ["total", "amount", "budget", "value"]
+    },
+    {
+      "id": 8,
+      "question": "What warranties are provided?",
+      "type": "factual",
+      "expected_answer_keywords": ["warranty", "warranties"]
+    },
+    {
+      "id": 9,
+      "question": "What is the governing law or jurisdiction?",
+      "type": "factual",
+      "expected_answer_keywords": ["governing law", "jurisdiction"]
+    },
+    {
+      "id": 10,
+      "question": "Are there any confidentiality or NDA obligations?",
+      "type": "factual",
+      "expected_answer_keywords": ["confidential", "non-disclosure", "nda"]
+    },
+    {
+      "id": 11,
+      "question": "Compare the vendor responsibilities to the client responsibilities.",
+      "type": "analytical",
+      "expected_answer_keywords": ["vendor", "client", "responsibil"]
+    },
+    {
+      "id": 12,
+      "question": "Is the proposed pricing consistent with the stated deliverables? Explain briefly.",
+      "type": "analytical",
+      "expected_answer_keywords": ["pricing", "deliverable", "align"]
+    },
+    {
+      "id": 13,
+      "question": "Assess whether the termination clause creates any material risk for the client.",
+      "type": "analytical",
+      "expected_answer_keywords": ["termination", "risk", "client"]
+    },
+    {
+      "id": 14,
+      "question": "Which option is more cost-effective and why: fixed fee or time-and-materials?",
+      "type": "analytical",
+      "expected_answer_keywords": ["cost", "fixed", "time", "materials"]
+    },
+    {
+      "id": 15,
+      "question": "Are the acceptance criteria measurable? Provide a brief justification.",
+      "type": "analytical",
+      "expected_answer_keywords": ["acceptance", "criteria", "measur"]
+    },
+    {
+      "id": 16,
+      "question": "Summarize the payment schedule in one or two sentences.",
+      "type": "summary",
+      "expected_answer_keywords": ["milestone", "invoice", "schedule", "payment"]
+    },
+    {
+      "id": 17,
+      "question": "Summarize the project timeline and key milestones.",
+      "type": "summary",
+      "expected_answer_keywords": ["timeline", "milestone", "phase"]
+    },
+    {
+      "id": 18,
+      "question": "Provide a brief summary of the scope of work.",
+      "type": "summary",
+      "expected_answer_keywords": ["scope", "work", "deliverable"]
+    },
+    {
+      "id": 19,
+      "question": "Summarize the main risks identified and any mitigations.",
+      "type": "summary",
+      "expected_answer_keywords": ["risk", "mitigat"]
+    },
+    {
+      "id": 20,
+      "question": "Summarize the approval and signature process.",
+      "type": "summary",
+      "expected_answer_keywords": ["approve", "sign", "authorization"]
+    }
+  ]
+}
