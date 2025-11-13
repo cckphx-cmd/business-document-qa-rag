@@ -1,0 +1,12 @@
+/* Specialist Theme v1 - REPLACE THIS WITH YOUR SPECIALIST'S CSS */
+
+/* When your specialist sends CSS, paste it here and select "Specialist v1" in Settings */
+
+/* For now, this is a placeholder that matches current theme */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+    font-family: 'Inter', sans-serif;
+}
+
+/* REPLACE EVERYTHING BELOW with specialist's CSS */

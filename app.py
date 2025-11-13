@@ -26,131 +26,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS Theme
-st.markdown("""
+# Load theme CSS
+def load_theme_css(theme_name):
+    """Load CSS from themes folder"""
+    theme_path = f"themes/{theme_name}.css"
+    if os.path.exists(theme_path):
+        with open(theme_path, 'r') as f:
+            return f.read()
+    return ""
+
+# Get selected theme
+selected_theme = st.session_state.get('selected_theme', 'current')
+theme_css = load_theme_css(selected_theme)
+
+st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    * {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    .main {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 2rem;
-    }
-    
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-        letter-spacing: -0.02em;
-    }
-    
-    .sub-header {
-        font-size: 1.1rem;
-        color: #6b7280;
-        margin-bottom: 2rem;
-        font-weight: 400;
-    }
-    
-    .stat-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-        transition: all 0.3s ease;
-        text-align: center;
-    }
-    
-    .stat-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-    }
-    
-    .stat-number {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #667eea;
-        margin-bottom: 0.5rem;
-    }
-    
-    .stat-label {
-        font-size: 0.875rem;
-        color: #6b7280;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 600;
-    }
-    
-    .answer-box {
-        background: #e8f4f8;
-        padding: 1.5rem;
-        border-radius: 12px;
-        border-left: 4px solid #667eea;
-        margin: 1rem 0;
-        color: #1f2937;
-        line-height: 1.6;
-    }
-    
-    .source-card {
-        background: #fffbeb;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 3px solid #f59e0b;
-        margin: 0.5rem 0;
-        font-size: 0.9rem;
-    }
-    
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
-        padding: 2rem 1rem;
-    }
-    
-    .stButton button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.75rem 2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(102, 126, 234, 0.3);
-    }
-    
-    .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(102, 126, 234, 0.4);
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: white;
-        padding: 0.5rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        padding: 0.75rem 1.5rem;
-        font-weight: 600;
-        background: transparent;
-        border: none;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white !important;
-    }
-    
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    {theme_css}
     </style>
 """, unsafe_allow_html=True)
 
@@ -518,7 +409,39 @@ with tab2:
 with tab3:
     st.markdown("### System Settings")
     
-    st.markdown("#### LLM Configuration")
+    # Theme Selector - ADD THIS NEW SECTION
+    st.markdown("#### 🎨 Theme")
+    
+    available_themes = []
+    if os.path.exists('themes/current.css'):
+        available_themes.append('current')
+    if os.path.exists('themes/specialist_v1.css'):
+        available_themes.append('specialist_v1')
+    if os.path.exists('themes/specialist_v2.css'):
+        available_themes.append('specialist_v2')
+    
+    theme_labels = {
+        'current': 'Current Design',
+        'specialist_v1': 'Specialist Design v1',
+        'specialist_v2': 'Specialist Design v2'
+    }
+    
+    if available_themes:
+        theme_selection = st.selectbox(
+            "Select Theme",
+            available_themes,
+            format_func=lambda x: theme_labels.get(x, x),
+            key="theme_selector"
+        )
+        
+        if theme_selection != st.session_state.get('selected_theme'):
+            st.session_state['selected_theme'] = theme_selection
+            st.success(f"Theme changed to: {theme_labels[theme_selection]}")
+            st.info("🔄 Refreshing to apply theme...")
+            st.rerun()
+    
+    st.markdown("---")
+    # Continue with LLM Configuration section...
     
     if FEATURES['dual_llm']:
         st.markdown("**Answer Mode:**")
