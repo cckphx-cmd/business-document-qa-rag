@@ -1,9 +1,8 @@
+.env
+.env.save
+.env.*
 venv/
 __pycache__/
 *.pyc
 .DS_Store
 *.log
-app_broken.py
-output.log
-.env
-*.pdf
