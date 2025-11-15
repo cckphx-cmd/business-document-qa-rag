@@ -1,0 +1,681 @@
+/* ============================================================================
+   SOFT EXECUTIVE MINIMAL THEME
+   Warm neutral tan, clean lines, big type, minimal text, visual-first
+   Think: Apple meets Notion meets premium AI consultancy
+   ============================================================================ */
+
+/* Design Tokens */
+:root {
+  /* Backgrounds */
+  --bg-main: #F5F2EE;           /* warm neutral tan */
+  --bg-alt: #FFFFFF;            /* clean white for contrast sections */
+  --bg-card: #FAF9F7;           /* very soft off-white */
+
+  /* Text colors */
+  --text-main: #2A2A2A;         /* deep charcoal, not harsh black */
+  --text-muted: #6E6B67;        /* warm muted gray */
+  --text-accent: #111111;       /* strong neutral for bold headlines */
+
+  /* Accent color */
+  --accent: #8A6E3C;            /* warm bronze gold (executive, subtle) */
+  --accent-soft: rgba(138, 110, 60, 0.12);
+  --accent-hover: #74592F;
+
+  /* Borders & shadows */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Spacing tokens */
+  --space-xs: 6px;
+  --space-sm: 12px;
+  --space-md: 20px;
+  --space-lg: 32px;
+  --space-xl: 48px;
+
+  /* Typography */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-size-sm: 14px;
+  --font-size-md: 17px;
+  --font-size-lg: 20px;
+  --font-size-xl: 30px;
+  --font-size-2xl: 42px;
+}
+
+/* ============================================================================
+   GLOBAL STYLES & STREAMLIT OVERRIDES
+   ============================================================================ */
+
+/* Main app background */
+.stApp {
+  background: var(--bg-main);
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Remove Streamlit's default padding/spacing */
+.block-container {
+  padding-top: var(--space-xl) !important;
+  padding-bottom: var(--space-xl) !important;
+  max-width: 1080px !important;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+
+.main-header {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-accent);
+  margin-bottom: var(--space-sm);
+  letter-spacing: -0.02em;
+}
+
+.sub-header {
+  font-size: var(--font-size-md);
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.5;
+  margin-bottom: var(--space-xl);
+}
+
+/* All headings */
+h1, h2, h3 {
+  color: var(--text-accent);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: var(--font-size-2xl);
+}
+
+h2 {
+  font-size: var(--font-size-xl);
+}
+
+h3 {
+  font-size: var(--font-size-lg);
+}
+
+/* ============================================================================
+   STAT CARDS
+   ============================================================================ */
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  text-align: center;
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+  border-color: var(--accent-soft);
+}
+
+.stat-number {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: var(--space-xs);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+}
+
+/* ============================================================================
+   BUTTONS
+   ============================================================================ */
+
+.stButton button {
+  background: var(--bg-card);
+  color: var(--text-accent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 22px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+}
+
+.stButton button:hover {
+  background: var(--bg-alt);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.stButton button:active {
+  transform: translateY(0);
+}
+
+/* Primary buttons */
+.stButton button[kind="primary"],
+.stButton button[data-baseweb="button"][kind="primary"] {
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+}
+
+.stButton button[kind="primary"]:hover,
+.stButton button[data-baseweb="button"][kind="primary"]:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Download buttons */
+.stDownloadButton button {
+  background: var(--bg-card);
+  color: var(--text-accent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 22px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stDownloadButton button:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ============================================================================
+   INPUT FIELDS
+   ============================================================================ */
+
+/* Text inputs */
+.stTextInput input {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  font-size: var(--font-size-md);
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.stTextInput input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.stTextInput input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Text areas */
+.stTextArea textarea {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  font-size: var(--font-size-md);
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.stTextArea textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.stTextArea textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   FILE UPLOADER
+   ============================================================================ */
+
+.stFileUploader {
+  background: var(--bg-card);
+  border: 2px dashed var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  transition: all 0.3s ease;
+}
+
+.stFileUploader:hover {
+  border-color: var(--accent);
+  background: var(--bg-alt);
+}
+
+.stFileUploader section {
+  border: none;
+}
+
+.stFileUploader button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-weight: 500;
+}
+
+.stFileUploader button:hover {
+  background: var(--accent-hover);
+}
+
+/* ============================================================================
+   ANSWER BOXES & CONTENT CARDS
+   ============================================================================ */
+
+.answer-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  line-height: 1.6;
+  font-size: var(--font-size-md);
+  color: var(--text-main);
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s ease;
+}
+
+.answer-box:hover {
+  box-shadow: var(--shadow-soft);
+}
+
+/* ============================================================================
+   DOCUMENT CARDS (Sidebar)
+   ============================================================================ */
+
+.doc-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  transition: all 0.2s ease;
+}
+
+.doc-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+  transform: translateX(2px);
+}
+
+/* ============================================================================
+   STATUS MESSAGES
+   ============================================================================ */
+
+/* Success */
+.stSuccess {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-left: 4px solid #22c55e;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  color: #166534;
+}
+
+/* Error */
+.stError {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #ef4444;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  color: #991b1b;
+}
+
+/* Warning */
+.stWarning {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  color: #92400e;
+}
+
+/* Info */
+.stInfo {
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  border-left: 4px solid #3b82f6;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  color: #1e40af;
+}
+
+/* ============================================================================
+   TABS
+   ============================================================================ */
+
+.stTabs [data-baseweb="tab-list"] {
+  gap: var(--space-sm);
+  background: transparent;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.stTabs [data-baseweb="tab"] {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: all 0.2s ease;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+  background: var(--bg-card);
+  color: var(--accent);
+  border-bottom: 3px solid var(--accent);
+}
+
+/* ============================================================================
+   SIDEBAR
+   ============================================================================ */
+
+section[data-testid="stSidebar"] {
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+}
+
+section[data-testid="stSidebar"] .block-container {
+  padding: var(--space-md);
+}
+
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+  color: var(--text-accent);
+  font-size: var(--font-size-lg);
+}
+
+/* ============================================================================
+   METRICS (Streamlit native metrics)
+   ============================================================================ */
+
+[data-testid="stMetric"] {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  box-shadow: var(--shadow-card);
+}
+
+[data-testid="stMetricLabel"] {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+}
+
+[data-testid="stMetricValue"] {
+  font-size: var(--font-size-xl);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   EXPANDERS
+   ============================================================================ */
+
+.streamlit-expanderHeader {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.streamlit-expanderHeader:hover {
+  background: var(--bg-alt);
+  border-color: var(--accent);
+}
+
+.streamlit-expanderContent {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: var(--space-md);
+}
+
+/* ============================================================================
+   SELECT BOXES & DROPDOWNS
+   ============================================================================ */
+
+.stSelectbox div[data-baseweb="select"] {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.stSelectbox div[data-baseweb="select"]:hover {
+  border-color: var(--accent);
+}
+
+/* ============================================================================
+   RADIO BUTTONS
+   ============================================================================ */
+
+.stRadio label {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-xs);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.stRadio label:hover {
+  background: var(--bg-alt);
+  border-color: var(--accent);
+}
+
+/* ============================================================================
+   PROGRESS BAR
+   ============================================================================ */
+
+.stProgress > div > div {
+  background-color: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================================
+   CODE BLOCKS
+   ============================================================================ */
+
+code {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 0.9em;
+  color: var(--accent);
+}
+
+pre {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+/* ============================================================================
+   CAPTIONS & SMALL TEXT
+   ============================================================================ */
+
+.stCaption, caption, .css-1kyxreq {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ============================================================================
+   ANIMATIONS
+   ============================================================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.stat-card {
+  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.answer-box {
+  animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.doc-card {
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================================
+   EMPTY STATES
+   ============================================================================ */
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-xl);
+  color: var(--text-muted);
+}
+
+.empty-state-icon {
+  font-size: 3rem;
+  margin-bottom: var(--space-md);
+  opacity: 0.6;
+}
+
+/* ============================================================================
+   COPY BUTTON (Custom)
+   ============================================================================ */
+
+.copy-button {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.copy-button:hover {
+  background: var(--accent);
+  color: white;
+}
+
+/* ============================================================================
+   TOAST NOTIFICATIONS
+   ============================================================================ */
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--accent);
+  color: white;
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 9999;
+  font-weight: 500;
+}
+
+/* ============================================================================
+   FORM ELEMENTS
+   ============================================================================ */
+
+.stForm {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  box-shadow: var(--shadow-card);
+}
+
+/* ============================================================================
+   SPINNER / LOADING
+   ============================================================================ */
+
+.stSpinner > div {
+  border-color: var(--accent) !important;
+}
+
+/* ============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .main-header {
+    font-size: var(--font-size-xl);
+  }
+
+  .stat-number {
+    font-size: var(--font-size-lg);
+  }
+
+  .block-container {
+    padding-top: var(--space-md) !important;
+    padding-bottom: var(--space-md) !important;
+  }
+}

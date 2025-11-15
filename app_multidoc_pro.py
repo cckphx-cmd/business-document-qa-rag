@@ -192,8 +192,9 @@ def load_theme_css(theme_name):
             return f.read()
     return ""
 
-# Get selected theme
-selected_theme = st.session_state.get('selected_theme', 'current')
+# Get selected theme (default to soft-executive-minimal if it exists)
+default_theme = 'soft-executive-minimal' if os.path.exists('themes/soft-executive-minimal.css') else 'current'
+selected_theme = st.session_state.get('selected_theme', default_theme)
 theme_css = load_theme_css(selected_theme)
 
 # Enhanced CSS with animations and better UX
@@ -1245,11 +1246,14 @@ with tab3:
         available_themes.append('specialist_v1')
     if os.path.exists('themes/specialist_v2.css'):
         available_themes.append('specialist_v2')
-    
+    if os.path.exists('themes/soft-executive-minimal.css'):
+        available_themes.append('soft-executive-minimal')
+
     theme_labels = {
         'current': 'Current Design',
         'specialist_v1': 'Specialist Design v1',
-        'specialist_v2': 'Specialist Design v2'
+        'specialist_v2': 'Specialist Design v2',
+        'soft-executive-minimal': 'Soft Executive Minimal'
     }
     
     if available_themes:
