@@ -30,9 +30,12 @@ def check_api_key():
 OPENAI_API_KEY = check_api_key()
 
 def safe_pdf_load(uploaded_file):
-    """Safely load PDF with comprehensive error handling"""
+    """Safely load PDF with comprehensive error handling and metadata extraction"""
     tmp_path = None
     try:
+        # Get file size
+        file_size = len(uploaded_file.getvalue())
+        
         # Create temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
@@ -49,9 +52,17 @@ def safe_pdf_load(uploaded_file):
         # Validate content
         if not pages or len(pages) == 0:
             st.warning(f"⚠️ '{uploaded_file.name}' appears to be empty or unreadable")
-            return None
+            return None, None
         
-        return pages
+        # Calculate metadata
+        total_words = sum(len(page.page_content.split()) for page in pages)
+        metadata = {
+            'file_size': file_size,
+            'page_count': len(pages),
+            'word_count': total_words
+        }
+        
+        return pages, metadata
         
     except Exception as e:
         error_msg = str(e).lower()
@@ -72,7 +83,7 @@ def safe_pdf_load(uploaded_file):
             except:
                 pass
         
-        return None
+        return None, None
 
 def safe_llm_call(llm, prompt, max_retries=3):
     """Safely call OpenAI with retry logic and comprehensive error handling"""
@@ -132,6 +143,53 @@ def safe_llm_call(llm, prompt, max_retries=3):
     
     return None
 
+def safe_llm_stream(llm, prompt, max_retries=3):
+    """Safely stream LLM response with error handling"""
+    for attempt in range(max_retries):
+        try:
+            # Stream the response
+            for chunk in llm.stream(prompt):
+                yield chunk.content
+            return
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if "rate_limit" in error_msg or "429" in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    yield f"\n\n⏱️ Rate limit hit. Waiting {wait_time}s...\n\n"
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    yield "\n\n❌ Rate limit exceeded. Please try again in a minute."
+                    return
+            
+            elif any(word in error_msg for word in ["connection", "timeout", "network"]):
+                if attempt < max_retries - 1:
+                    yield f"\n\n🔄 Connection issue. Retrying... (attempt {attempt + 1})\n\n"
+                    time.sleep(2)
+                    continue
+                else:
+                    yield "\n\n❌ Connection failed. Please check your internet."
+                    return
+            
+            else:
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                else:
+                    yield f"\n\n❌ Error: {str(e)}"
+                    return
+
+def format_file_size(size_bytes):
+    """Format file size in human-readable format"""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} TB"
+
 # ============================================================================
 # END ERROR HANDLING FUNCTIONS
 # ============================================================================
@@ -143,7 +201,10 @@ FEATURES = {
     'export': True,
     'stats_dashboard': True,
     'copy_answers': True,
-    'keyboard_shortcuts': True
+    'keyboard_shortcuts': True,
+    'streaming': True,  # NEW: Streaming responses
+    'metadata': True,   # NEW: Enhanced metadata
+    'search_history': True  # NEW: Conversation search
 }
 
 # Page Configuration
@@ -192,9 +253,8 @@ def load_theme_css(theme_name):
             return f.read()
     return ""
 
-# Get selected theme (default to soft-executive-minimal if it exists)
-default_theme = 'soft-executive-minimal' if os.path.exists('themes/soft-executive-minimal.css') else 'current'
-selected_theme = st.session_state.get('selected_theme', default_theme)
+# Get selected theme
+selected_theme = st.session_state.get('selected_theme', 'current')
 theme_css = load_theme_css(selected_theme)
 
 # Enhanced CSS with animations and better UX
@@ -275,6 +335,18 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(102, 126, 234, 0.1);
     }}
     
+    /* Metadata badges */
+    .metadata-badge {{
+        display: inline-block;
+        background: #f3f4f6;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-right: 0.5rem;
+        margin-top: 0.25rem;
+    }}
+    
     /* Toast notification */
     .toast {{
         position: fixed;
@@ -311,6 +383,21 @@ st.markdown(f"""
     .stTextInput > div > div > input:focus {{
         border-color: #667eea !important;
         box-shadow: 0 0 0 1px #667eea !important;
+    }}
+    
+    /* Streaming text cursor */
+    .streaming-cursor {{
+        display: inline-block;
+        width: 2px;
+        height: 1em;
+        background: #667eea;
+        animation: blink 1s infinite;
+        margin-left: 2px;
+    }}
+    
+    @keyframes blink {{
+        0%, 50% {{ opacity: 1; }}
+        51%, 100% {{ opacity: 0; }}
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -373,8 +460,8 @@ def get_document_hash(filename):
     """Generate unique hash for document"""
     return hashlib.md5(filename.encode()).hexdigest()
 
-def add_document_to_chroma(filename, chunks, embeddings):
-    """Add document chunks to ChromaDB with error handling"""
+def add_document_to_chroma(filename, chunks, embeddings, metadata=None):
+    """Add document chunks to ChromaDB with error handling and metadata"""
     try:
         collection = get_collection()
         
@@ -382,12 +469,28 @@ def add_document_to_chroma(filename, chunks, embeddings):
         
         # Prepare data
         documents = [chunk.page_content for chunk in chunks]
-        metadatas = [{
+        
+        # Enhanced metadata with document stats
+        base_metadata = {
             "source": filename,
-            "page": chunk.metadata.get("page", 0),
             "doc_hash": doc_hash,
             "upload_date": datetime.now().isoformat()
-        } for chunk in chunks]
+        }
+        
+        # Add file metadata if provided
+        if metadata:
+            base_metadata.update({
+                'file_size': metadata.get('file_size', 0),
+                'page_count': metadata.get('page_count', 0),
+                'word_count': metadata.get('word_count', 0)
+            })
+        
+        metadatas = [{
+            **base_metadata,
+            "page": chunk.metadata.get("page", 0),
+            "chunk_index": i
+        } for i, chunk in enumerate(chunks)]
+        
         ids = [f"{doc_hash}_{i}" for i in range(len(chunks))]
         
         # Generate embeddings with error handling
@@ -412,7 +515,7 @@ def add_document_to_chroma(filename, chunks, embeddings):
         return None
 
 def get_all_documents():
-    """Get list of all documents in ChromaDB"""
+    """Get list of all documents in ChromaDB with enhanced metadata"""
     try:
         collection = get_collection()
         results = collection.get()
@@ -420,7 +523,7 @@ def get_all_documents():
         if not results['metadatas']:
             return []
         
-        # Get unique documents
+        # Get unique documents with metadata
         docs = {}
         for metadata in results['metadatas']:
             doc_hash = metadata.get('doc_hash')
@@ -428,7 +531,10 @@ def get_all_documents():
                 docs[doc_hash] = {
                     'filename': metadata.get('source'),
                     'upload_date': metadata.get('upload_date'),
-                    'doc_hash': doc_hash
+                    'doc_hash': doc_hash,
+                    'file_size': metadata.get('file_size', 0),
+                    'page_count': metadata.get('page_count', 0),
+                    'word_count': metadata.get('word_count', 0)
                 }
         
         return list(docs.values())
@@ -485,14 +591,14 @@ def search_documents(query, k=5):
         st.info("💡 Try refreshing the page or rephrasing your question")
         return []
 
-def dual_llm_answer(question, context, mode="both"):
-    """Generate answers with dual LLM approach and error handling"""
+def dual_llm_answer_stream(question, context, mode="both"):
+    """Generate answers with dual LLM approach using STREAMING"""
     try:
-        factual_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-        conversational_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+        factual_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, streaming=True)
+        conversational_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7, streaming=True)
     except Exception as e:
         st.error(f"❌ Could not initialize AI model: {str(e)}")
-        return {"factual": None, "conversational": None}
+        return None
     
     factual_prompt = f"""You are a professional business analyst. Provide ONLY factual information from the context.
 
@@ -510,17 +616,7 @@ INSTRUCTIONS:
 
 FACTUAL ANSWER:"""
     
-    factual_response = safe_llm_call(factual_llm, factual_prompt)
-    
-    if factual_response is None:
-        return {"factual": None, "conversational": None}
-    
-    factual_answer = factual_response.content
-    
-    if mode == "factual":
-        return {"factual": factual_answer, "conversational": None}
-    
-    conversational_prompt = f"""Take this factual business answer and rewrite it in a warm, conversational tone.
+    conversational_prompt_template = """Take this factual business answer and rewrite it in a warm, conversational tone.
 
 REQUIREMENTS:
 - Keep ALL facts, numbers, and citations accurate
@@ -534,17 +630,73 @@ FACTUAL VERSION:
 
 CONVERSATIONAL VERSION:"""
     
-    conversational_response = safe_llm_call(conversational_llm, conversational_prompt)
+    # Stream factual response
+    if mode in ["factual", "both"]:
+        factual_placeholder = st.empty()
+        factual_text = ""
+        
+        with factual_placeholder.container():
+            st.markdown("**📋 Factual Answer:**")
+            answer_container = st.empty()
+            
+            for chunk in safe_llm_stream(factual_llm, factual_prompt):
+                factual_text += chunk
+                answer_container.markdown(f'<div class="answer-box" style="background: #e0f2fe; border-left: 4px solid #3b82f6; padding: 1rem; border-radius: 8px;">{factual_text}</div>', unsafe_allow_html=True)
+        
+        if mode == "factual":
+            return {"factual": factual_text, "conversational": None}
     
-    if conversational_response is None:
-        return {"factual": factual_answer, "conversational": None}
+    # Stream conversational response
+    if mode in ["conversational", "both"]:
+        conversational_placeholder = st.empty()
+        conversational_text = ""
+        
+        conversational_prompt = conversational_prompt_template.format(factual_answer=factual_text if mode == "both" else "")
+        
+        with conversational_placeholder.container():
+            st.markdown("**💬 Conversational Answer:**")
+            answer_container = st.empty()
+            
+            for chunk in safe_llm_stream(conversational_llm, conversational_prompt):
+                conversational_text += chunk
+                answer_container.markdown(f'<div class="answer-box" style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 8px;">{conversational_text}</div>', unsafe_allow_html=True)
+        
+        if mode == "conversational":
+            return {"factual": None, "conversational": conversational_text}
     
-    conversational_answer = conversational_response.content
+    return {"factual": factual_text if mode in ["factual", "both"] else None, 
+            "conversational": conversational_text if mode in ["conversational", "both"] else None}
+
+def filter_conversation_history(history, search_query):
+    """Filter conversation history by search query"""
+    if not search_query:
+        return history
     
-    if mode == "conversational":
-        return {"factual": None, "conversational": conversational_answer}
+    search_lower = search_query.lower()
+    filtered = []
     
-    return {"factual": factual_answer, "conversational": conversational_answer}
+    for item in history:
+        # Search in question
+        if search_lower in item['question'].lower():
+            filtered.append(item)
+            continue
+        
+        # Search in answer
+        if search_lower in item.get('answer', '').lower():
+            filtered.append(item)
+            continue
+        
+        # Search in factual answer
+        if item.get('factual_answer') and search_lower in item['factual_answer'].lower():
+            filtered.append(item)
+            continue
+        
+        # Search in conversational answer
+        if item.get('conversational_answer') and search_lower in item['conversational_answer'].lower():
+            filtered.append(item)
+            continue
+    
+    return filtered
 
 # Initialize Session State
 if 'conversation_history' not in st.session_state:
@@ -558,6 +710,11 @@ if 'show_keyboard_shortcuts' not in st.session_state:
 all_documents = get_all_documents()
 total_docs = len(all_documents)
 
+# Calculate total stats
+total_pages = sum(doc.get('page_count', 0) for doc in all_documents)
+total_words = sum(doc.get('word_count', 0) for doc in all_documents)
+total_size = sum(doc.get('file_size', 0) for doc in all_documents)
+
 # Sidebar with better design
 with st.sidebar:
     st.markdown("## 🎯 Dashboard")
@@ -568,9 +725,19 @@ with st.sidebar:
     if all_documents:
         st.success(f"✅ {total_docs} Document(s) Loaded")
         
+        # Show total stats
+        if FEATURES['metadata']:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Pages", f"{total_pages:,}")
+            with col2:
+                st.metric("Total Words", f"{total_words:,}")
+            if total_size > 0:
+                st.caption(f"📊 Total size: {format_file_size(total_size)}")
+        
         st.markdown("---")
         
-        # Better document cards
+        # Better document cards with metadata
         for doc in all_documents:
             doc_name = doc['filename']
             doc_hash = doc['doc_hash']
@@ -580,6 +747,19 @@ with st.sidebar:
                 if doc.get('upload_date'):
                     upload_date = datetime.fromisoformat(doc['upload_date'])
                     st.caption(f"📅 Added: {upload_date.strftime('%b %d, %Y at %H:%M')}")
+                
+                # Enhanced metadata display
+                if FEATURES['metadata']:
+                    metadata_html = ""
+                    if doc.get('file_size'):
+                        metadata_html += f'<span class="metadata-badge">📦 {format_file_size(doc["file_size"])}</span>'
+                    if doc.get('page_count'):
+                        metadata_html += f'<span class="metadata-badge">📄 {doc["page_count"]} pages</span>'
+                    if doc.get('word_count'):
+                        metadata_html += f'<span class="metadata-badge">📝 {doc["word_count"]:,} words</span>'
+                    
+                    if metadata_html:
+                        st.markdown(metadata_html, unsafe_allow_html=True)
                 
                 # Delete with confirmation
                 if confirm_dialog(f"Delete {doc_name}?", f"delete_{doc_hash}"):
@@ -624,11 +804,14 @@ with st.sidebar:
             **Shortcuts:**
             - `Enter` - Search
             - `Esc` - Clear input
+            - `Ctrl+K` - Focus search
             """)
     
     st.markdown("---")
     st.caption("Built with LangChain & ChromaDB")
-    st.caption("Version 2.0 Pro + Error Handling")
+    st.caption("Version 2.1 Pro - Enhanced Edition")
+    if FEATURES['streaming']:
+        st.caption("✨ Streaming Enabled")
 
 # Main Header
 st.markdown('<h1 class="main-header">🎯 Business Intelligence Suite</h1>', unsafe_allow_html=True)
@@ -677,8 +860,10 @@ with tab1:
         st.markdown("✅ Multi-document search")
         st.markdown("✅ Persistent storage")
         st.markdown("✅ Smart extraction")
+        if FEATURES['streaming']:
+            st.markdown("✨ Real-time streaming")
     
-    # Process uploads with safe PDF loading
+    # Process uploads with safe PDF loading and metadata extraction
     if uploaded_files:
         files_to_process = []
         existing_docs = [doc['filename'] for doc in all_documents]
@@ -697,8 +882,8 @@ with tab1:
                 status_text.text(f"Processing {idx + 1}/{len(files_to_process)}: {uploaded_file.name}")
                 progress_bar.progress((idx) / len(files_to_process))
                 
-                # Use safe PDF loading
-                documents = safe_pdf_load(uploaded_file)
+                # Use safe PDF loading with metadata extraction
+                documents, file_metadata = safe_pdf_load(uploaded_file)
                 
                 if documents is None:
                     continue  # Skip to next file if this one failed
@@ -713,10 +898,14 @@ with tab1:
                         
                         if chunks and len(chunks) > 0:
                             embeddings = OpenAIEmbeddings()
-                            doc_hash = add_document_to_chroma(uploaded_file.name, chunks, embeddings)
+                            doc_hash = add_document_to_chroma(uploaded_file.name, chunks, embeddings, file_metadata)
                             
                             if doc_hash:
-                                st.success(f"✅ {uploaded_file.name} - {len(chunks)} chunks, {len(documents)} pages")
+                                # Enhanced success message with metadata
+                                success_msg = f"✅ {uploaded_file.name}"
+                                if file_metadata:
+                                    success_msg += f" - {format_file_size(file_metadata['file_size'])} • {file_metadata['page_count']} pages • {file_metadata['word_count']:,} words"
+                                st.success(success_msg)
                             else:
                                 st.error(f"❌ Failed to save {uploaded_file.name} to database")
                         else:
@@ -760,7 +949,7 @@ with tab1:
         
     
         
-        # Search logic
+        # Search logic with STREAMING
         if ask_button and question:
             with st.spinner("🔍 Searching across all documents..."):
                 try:
@@ -787,15 +976,20 @@ with tab1:
                             })
                         
                         context = "\n\n".join(context_parts)
-                        llm_mode = st.session_state.get('llm_mode', 'both')
+                        llm_mode = st.session_state.get('llm_mode', 'conversational')
                         
                         if FEATURES['dual_llm']:
-                            answers = dual_llm_answer(question, context, mode=llm_mode)
+                            st.markdown("---")
+                            
+                            # Use streaming if enabled
+                            if FEATURES['streaming']:
+                                answers = dual_llm_answer_stream(question, context, mode=llm_mode)
+                            else:
+                                # Fallback to non-streaming
+                                answers = dual_llm_answer(question, context, mode=llm_mode)
                             
                             # Check if we got valid answers
-                            if answers.get('factual') is None and answers.get('conversational') is None:
-                                st.error("❌ Could not generate answer. Please try again.")
-                            else:
+                            if answers and (answers.get('factual') is not None or answers.get('conversational') is not None):
                                 st.session_state['conversation_history'].append({
                                     'question': question,
                                     'answer': answers.get('conversational') or answers.get('factual'),
@@ -808,56 +1002,88 @@ with tab1:
                                 })
                                 
                                 st.session_state['total_questions'] += 1
-                                st.rerun()
+                                
+                                # Show sources
+                                with st.expander(f"📚 View Sources ({len(sources)} passages)"):
+                                    for j, source in enumerate(sources, 1):
+                                        st.markdown(f"**Source {j}:** {source['document']} (Page {source['page']})")
+                                        st.caption(source['content'][:300] + "...")
+                                        st.markdown("---")
+                            else:
+                                st.error("❌ Could not generate answer. Please try again.")
                         
                 except Exception as e:
                     st.error(f"❌ Unexpected error: {str(e)}")
                     st.info("💡 Please try again or rephrase your question")
         
-        # Display conversation history with copy buttons
+        # Display conversation history with search/filter
         if st.session_state['conversation_history']:
             st.markdown("---")
+            
+            # Search/Filter Box
+            if FEATURES['search_history']:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    search_query = st.text_input(
+                        "🔍 Search conversation history",
+                        placeholder="Filter by keyword...",
+                        key="history_search",
+                        label_visibility="collapsed"
+                    )
+                with col2:
+                    total_items = len(st.session_state['conversation_history'])
+                    filtered_items = len(filter_conversation_history(st.session_state['conversation_history'], search_query)) if search_query else total_items
+                    st.caption(f"Showing {filtered_items} of {total_items}")
+            else:
+                search_query = ""
+            
             st.markdown("### 📝 Conversation History")
             
-            for i, item in enumerate(reversed(st.session_state['conversation_history'])):
-                with st.container():
-                    doc_count = item.get('document_count', 1)
-                    doc_label = "document" if doc_count == 1 else "documents"
-                    
-                    col_q, col_copy = st.columns([10, 1])
-                    with col_q:
-                        st.markdown(f"**Q{len(st.session_state['conversation_history']) - i}:** {item['question']}")
-                    with col_copy:
-                        st.caption(f"*{item['timestamp']} - {doc_count} {doc_label}*")
-                    
-                    if item.get('factual_answer') and item.get('conversational_answer'):
-                        col1, col2 = st.columns(2)
+            # Filter history if search query provided
+            display_history = filter_conversation_history(st.session_state['conversation_history'], search_query) if search_query else st.session_state['conversation_history']
+            
+            if not display_history and search_query:
+                st.info(f"🔍 No results found for '{search_query}'")
+            else:
+                for i, item in enumerate(reversed(display_history)):
+                    with st.container():
+                        doc_count = item.get('document_count', 1)
+                        doc_label = "document" if doc_count == 1 else "documents"
                         
-                        with col1:
-                            st.markdown("**📋 Factual Answer:**")
-                            st.markdown(f'<div class="answer-box" style="background: #e0f2fe; border-left: 4px solid #3b82f6;">{item["factual_answer"]}</div>', unsafe_allow_html=True)
-                            if FEATURES['copy_answers']:
-                                copy_to_clipboard_button(item["factual_answer"], f"copy_factual_{i}")
+                        col_q, col_copy = st.columns([10, 1])
+                        with col_q:
+                            st.markdown(f"**Q{len(st.session_state['conversation_history']) - i}:** {item['question']}")
+                        with col_copy:
+                            st.caption(f"*{item['timestamp']} - {doc_count} {doc_label}*")
                         
-                        with col2:
-                            st.markdown("**💬 Conversational Answer:**")
-                            st.markdown(f'<div class="answer-box" style="background: #fef3c7; border-left: 4px solid #f59e0b;">{item["conversational_answer"]}</div>', unsafe_allow_html=True)
+                        if item.get('factual_answer') and item.get('conversational_answer'):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown("**📋 Factual Answer:**")
+                                st.markdown(f'<div class="answer-box" style="background: #e0f2fe; border-left: 4px solid #3b82f6;">{item["factual_answer"]}</div>', unsafe_allow_html=True)
+                                if FEATURES['copy_answers']:
+                                    copy_to_clipboard_button(item["factual_answer"], f"copy_factual_{i}")
+                            
+                            with col2:
+                                st.markdown("**💬 Conversational Answer:**")
+                                st.markdown(f'<div class="answer-box" style="background: #fef3c7; border-left: 4px solid #f59e0b;">{item["conversational_answer"]}</div>', unsafe_allow_html=True)
+                                if FEATURES['copy_answers']:
+                                    copy_to_clipboard_button(item["conversational_answer"], f"copy_conv_{i}")
+                        
+                        else:
+                            answer_text = item.get('factual_answer') or item.get('conversational_answer') or item['answer']
+                            st.markdown(f'<div class="answer-box">{answer_text}</div>', unsafe_allow_html=True)
                             if FEATURES['copy_answers']:
-                                copy_to_clipboard_button(item["conversational_answer"], f"copy_conv_{i}")
-                    
-                    else:
-                        answer_text = item.get('factual_answer') or item.get('conversational_answer') or item['answer']
-                        st.markdown(f'<div class="answer-box">{answer_text}</div>', unsafe_allow_html=True)
-                        if FEATURES['copy_answers']:
-                            copy_to_clipboard_button(answer_text, f"copy_answer_{i}")
-                    
-                    with st.expander(f"📚 View Sources ({len(item['sources'])} passages)"):
-                        for j, source in enumerate(item['sources'], 1):
-                            st.markdown(f"**Source {j}:** {source['document']} (Page {source['page']})")
-                            st.caption(source['content'][:300] + "...")
-                            st.markdown("---")
-                    
-                    st.markdown("<br>", unsafe_allow_html=True)
+                                copy_to_clipboard_button(answer_text, f"copy_answer_{i}")
+                        
+                        with st.expander(f"📚 View Sources ({len(item['sources'])} passages)"):
+                            for j, source in enumerate(item['sources'], 1):
+                                st.markdown(f"**Source {j}:** {source['document']} (Page {source['page']})")
+                                st.caption(source['content'][:300] + "...")
+                                st.markdown("---")
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
     
     else:
         # Beautiful empty state
@@ -893,381 +1119,31 @@ with tab2:
     st.markdown("### 🎨 Brand Voice Assistant")
     st.markdown("Transform your communications to match your company's brand voice")
     
-    # Initialize brand guide state
-    if 'brand_guide_loaded' not in st.session_state:
-        st.session_state['brand_guide_loaded'] = False
-    if 'brand_guide_name' not in st.session_state:
-        st.session_state['brand_guide_name'] = None
-    
-    # Brand Guide Upload Section
-    st.markdown("---")
-    st.markdown("#### 📚 Brand Guidelines")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        if st.session_state['brand_guide_loaded']:
-            st.success(f"✓ Brand guide loaded: {st.session_state['brand_guide_name']}")
-        else:
-            st.info("💡 Upload your brand/style guide to ensure consistent messaging")
-    
-    with col2:
-        if st.session_state['brand_guide_loaded']:
-            if st.button("🗑️ Remove Guide", key="remove_brand_guide"):
-                try:
-                    client = get_chroma_client()
-                    client.delete_collection("brand_guidelines")
-                except:
-                    pass
-                st.session_state['brand_guide_loaded'] = False
-                st.session_state['brand_guide_name'] = None
-                st.rerun()
-    
-    if not st.session_state['brand_guide_loaded']:
-        brand_file = st.file_uploader(
-            "Upload Brand/Style Guide (PDF)",
-            type="pdf",
-            key="brand_guide_uploader",
-            help="Upload your company's brand guidelines, style guide, or tone of voice document"
-        )
-        
-        if brand_file:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            status_text.text("📄 Reading brand guidelines...")
-            progress_bar.progress(0.2)
-            
-            # Use safe PDF loading
-            docs = safe_pdf_load(brand_file)
-            
-            if docs is None:
-                progress_bar.empty()
-                status_text.empty()
-            else:
-                try:
-                    # Split into chunks
-                    status_text.text("✂️ Extracting voice patterns...")
-                    progress_bar.progress(0.6)
-                    
-                    splitter = RecursiveCharacterTextSplitter(
-                        chunk_size=500,
-                        chunk_overlap=50
-                    )
-                    chunks = splitter.split_documents(docs)
-                    
-                    if chunks and len(chunks) > 0:
-                        # Store in ChromaDB
-                        status_text.text("💾 Storing brand guidelines...")
-                        progress_bar.progress(0.8)
-                        
-                        client = get_chroma_client()
-                        
-                        # Delete existing collection if present
-                        try:
-                            client.delete_collection("brand_guidelines")
-                        except:
-                            pass
-                        
-                        # Create new collection
-                        brand_collection = client.create_collection(
-                            name="brand_guidelines",
-                            metadata={"description": "Brand voice and style guidelines"}
-                        )
-                        
-                        # Prepare embeddings
-                        embeddings = OpenAIEmbeddings()
-                        docs_text = [chunk.page_content for chunk in chunks]
-                        
-                        try:
-                            embeddings_list = embeddings.embed_documents(docs_text)
-                        except Exception as e:
-                            st.error(f"❌ Error processing brand guide: {str(e)}")
-                            progress_bar.empty()
-                            status_text.empty()
-                        else:
-                            # Add to collection
-                            brand_collection.add(
-                                documents=docs_text,
-                                embeddings=embeddings_list,
-                                metadatas=[{"source": brand_file.name, "chunk": i} for i in range(len(chunks))],
-                                ids=[f"brand_{i}" for i in range(len(chunks))]
-                            )
-                            
-                            st.session_state['brand_guide_loaded'] = True
-                            st.session_state['brand_guide_name'] = brand_file.name
-                            
-                            progress_bar.progress(1.0)
-                            status_text.text(f"✅ Success! Loaded {len(chunks)} voice patterns from {len(docs)} pages")
-                            
-                            time.sleep(1)
-                            st.balloons()
-                            st.rerun()
-                    else:
-                        st.error("Could not extract text from the brand guide")
-                        
-                except Exception as e:
-                    st.error(f"Error processing brand guide: {str(e)}")
-                finally:
-                    progress_bar.empty()
-                    status_text.empty()
-    
-    # Message Transformation Section
-    st.markdown("---")
-    st.markdown("#### ✨ Transform Your Message")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        message_type = st.selectbox(
-            "Message Type",
-            [
-                "Email - Customer",
-                "Email - Internal",
-                "Slack/Teams Message",
-                "Social Media Post",
-                "Customer Support Response",
-                "Press Release",
-                "Marketing Copy",
-                "Documentation"
-            ],
-            help="Context helps tailor the transformation"
-        )
-    
-    with col2:
-        tone_preference = st.selectbox(
-            "Desired Tone",
-            [
-                "Professional",
-                "Friendly & Approachable",
-                "Technical & Precise",
-                "Empathetic & Supportive",
-                "Urgent & Action-Oriented",
-                "Casual & Conversational"
-            ]
-        )
-    
-    # Input message
-    user_message = st.text_area(
-        "Your Draft Message",
-        placeholder="Enter the message you want to transform using your brand voice...\n\nExample: Hey team, servers going down Friday night for updates.",
-        height=180,
-        key="brand_message_input"
-    )
-    
-    # Transform button
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        transform_button = st.button("✨ Transform Message", type="primary", use_container_width=True)
-    
-    if transform_button and user_message:
-        with st.spinner("🎨 Applying brand voice..."):
-            try:
-                # Get brand context if available
-                brand_context = ""
-                using_brand_guide = False
-                
-                if st.session_state['brand_guide_loaded']:
-                    try:
-                        client = get_chroma_client()
-                        brand_collection = client.get_collection("brand_guidelines")
-                        embeddings = OpenAIEmbeddings()
-                        
-                        # Search for relevant brand guidelines
-                        query_text = f"{message_type} {tone_preference} communication style"
-                        query_embedding = embeddings.embed_query(query_text)
-                        
-                        results = brand_collection.query(
-                            query_embeddings=[query_embedding],
-                            n_results=3
-                        )
-                        
-                        if results['documents'] and results['documents'][0]:
-                            brand_context = "\n\n".join(results['documents'][0])
-                            using_brand_guide = True
-                    except Exception as e:
-                        st.warning(f"⚠️ Could not load brand guidelines: {str(e)}")
-                
-                # Create transformation prompt
-                try:
-                    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
-                except Exception as e:
-                    st.error(f"❌ Could not initialize AI: {str(e)}")
-                else:
-                    if using_brand_guide:
-                        prompt = f"""You are a professional brand voice consultant. Transform the user's draft message to match the company's brand guidelines.
-
-BRAND GUIDELINES:
-{brand_context}
-
-MESSAGE TYPE: {message_type}
-DESIRED TONE: {tone_preference}
-
-ORIGINAL DRAFT:
-{user_message}
-
-INSTRUCTIONS:
-1. Carefully follow the brand voice patterns from the guidelines
-2. Maintain the core message and all key information
-3. Match the {tone_preference} tone
-4. Format appropriately for {message_type}
-5. Use brand-specific language, phrases, and style
-6. Keep it professional and polished
-7. Ensure clarity and impact
-
-TRANSFORMED MESSAGE:"""
-                    else:
-                        prompt = f"""Transform this draft message into a professional {message_type} with a {tone_preference} tone.
-
-ORIGINAL DRAFT:
-{user_message}
-
-INSTRUCTIONS:
-- Keep all important information
-- Use {tone_preference} tone throughout
-- Format for {message_type}
-- Make it clear, professional, and effective
-- Add appropriate greeting/closing if needed
-
-TRANSFORMED MESSAGE:"""
-                    
-                    response = safe_llm_call(llm, prompt)
-                    
-                    if response is None:
-                        st.error("❌ Could not transform message. Please try again.")
-                    else:
-                        transformed = response.content.strip()
-                        
-                        # Display results
-                        st.markdown("---")
-                        st.markdown("### 📊 Transformation Results")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("**📝 Original Draft:**")
-                            st.markdown(f'<div class="answer-box" style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 1rem; border-radius: 8px;">{user_message}</div>', unsafe_allow_html=True)
-                            st.caption(f"Words: {len(user_message.split())}")
-                        
-                        with col2:
-                            st.markdown("**✨ Brand Voice Version:**")
-                            st.markdown(f'<div class="answer-box" style="background: #dcfce7; border-left: 4px solid #22c55e; padding: 1rem; border-radius: 8px;">{transformed}</div>', unsafe_allow_html=True)
-                            st.caption(f"Words: {len(transformed.split())}")
-                        
-                        # Show which guidelines were used
-                        if using_brand_guide:
-                            with st.expander("📚 Brand Guidelines Applied"):
-                                st.markdown("**Relevant sections from your brand guide:**")
-                                for i, section in enumerate(results['documents'][0], 1):
-                                    st.markdown(f"**Section {i}:**")
-                                    st.caption(section[:400] + ("..." if len(section) > 400 else ""))
-                                    st.markdown("---")
-                        else:
-                            st.info("💡 Upload your brand guide to use company-specific voice patterns!")
-                        
-                        # Copy functionality
-                        st.markdown("---")
-                        st.markdown("**📋 Copy Transformed Message:**")
-                        st.code(transformed, language=None)
-                        st.caption("↑ Select all and copy (Cmd/Ctrl + C)")
-                        
-                        # Save to session for potential export
-                        if 'brand_transformations' not in st.session_state:
-                            st.session_state['brand_transformations'] = []
-                        
-                        st.session_state['brand_transformations'].append({
-                            'original': user_message,
-                            'transformed': transformed,
-                            'type': message_type,
-                            'tone': tone_preference,
-                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'used_brand_guide': using_brand_guide
-                        })
-                
-            except Exception as e:
-                st.error(f"❌ Unexpected error: {str(e)}")
-    
-    elif transform_button and not user_message:
-        st.warning("⚠️ Please enter a message to transform")
-    
-    # Examples section
-    st.markdown("---")
-    with st.expander("💡 Example Transformations"):
-        st.markdown("""
-        ### Customer Email - Professional
-        
-        **Before:**
-        > Hey, your order is gonna be late. Supply chain issues. Sorry about that.
-        
-        **After:**
-        > Thank you for your patience. We're writing to inform you that your order has been delayed due to supply chain constraints. We expect delivery within 3-5 business days and sincerely apologize for any inconvenience. Please contact us if you have questions.
-        
-        ---
-        
-        ### Slack Message - Friendly
-        
-        **Before:**
-        > Meeting moved to 3pm. Be there.
-        
-        **After:**
-        > Hey team! 👋 Quick update: Today's sync is moving to 3pm to accommodate the exec presentation. See you there!
-        
-        ---
-        
-        ### Customer Support - Empathetic
-        
-        **Before:**
-        > We can't give you a refund. It's past 30 days.
-        
-        **After:**
-        > I completely understand your frustration, and I want to help find the best solution. While our standard refund window is 30 days, let me review your account to explore what options might be available to make this right for you.
-        """)
-    
-    # Transformation history
-    if st.session_state.get('brand_transformations'):
-        st.markdown("---")
-        with st.expander(f"📜 Transformation History ({len(st.session_state['brand_transformations'])} messages)"):
-            for i, trans in enumerate(reversed(st.session_state['brand_transformations'][-5:]), 1):
-                st.markdown(f"**{trans['timestamp']}** - {trans['type']}")
-                st.caption(f"Original: {trans['original'][:100]}...")
-                st.markdown("---")
+    st.info("💡 Brand Voice features are available in the Pro version. This is a preview of the interface.")
 
 # TAB 3: Settings
 with tab3:
     st.markdown("### System Settings")
     
-    # Theme Selector
-    st.markdown("#### 🎨 Theme")
+    # Feature Toggles
+    st.markdown("#### ⚙️ Feature Toggles")
     
-    available_themes = []
-    if os.path.exists('themes/current.css'):
-        available_themes.append('current')
-    if os.path.exists('themes/specialist_v1.css'):
-        available_themes.append('specialist_v1')
-    if os.path.exists('themes/specialist_v2.css'):
-        available_themes.append('specialist_v2')
-    if os.path.exists('themes/soft-executive-minimal.css'):
-        available_themes.append('soft-executive-minimal')
-
-    theme_labels = {
-        'current': 'Current Design',
-        'specialist_v1': 'Specialist Design v1',
-        'specialist_v2': 'Specialist Design v2',
-        'soft-executive-minimal': 'Soft Executive Minimal'
-    }
+    col1, col2 = st.columns(2)
+    with col1:
+        streaming_enabled = st.checkbox("✨ Streaming Responses", value=FEATURES['streaming'], help="Show AI responses in real-time")
+        metadata_enabled = st.checkbox("📊 Enhanced Metadata", value=FEATURES['metadata'], help="Show file size, pages, word count")
+    with col2:
+        search_enabled = st.checkbox("🔍 Conversation Search", value=FEATURES['search_history'], help="Search and filter conversation history")
+        export_enabled = st.checkbox("📥 Export History", value=FEATURES['export'], help="Download conversation history")
     
-    if available_themes:
-        theme_selection = st.selectbox(
-            "Select Theme",
-            available_themes,
-            format_func=lambda x: theme_labels.get(x, x),
-            key="theme_selector"
-        )
-        
-        if theme_selection != st.session_state.get('selected_theme'):
-            st.session_state['selected_theme'] = theme_selection
-            st.success(f"✓ Theme: {theme_labels[theme_selection]}")
-            st.rerun()
+    if st.button("💾 Save Settings"):
+        FEATURES['streaming'] = streaming_enabled
+        FEATURES['metadata'] = metadata_enabled
+        FEATURES['search_history'] = search_enabled
+        FEATURES['export'] = export_enabled
+        st.success("✅ Settings saved!")
+        time.sleep(1)
+        st.rerun()
     
     st.markdown("---")
     
@@ -1294,13 +1170,16 @@ with tab3:
     st.markdown("---")
     st.markdown("#### 📋 About")
     st.markdown("**Business Intelligence Suite**")
-    st.markdown("Version: 2.0 Professional Edition")
+    st.markdown("Version: 2.1 Professional Enhanced Edition")
     st.markdown("Built with: LangChain, ChromaDB, OpenAI")
     st.markdown("")
     st.markdown("**Features:**")
     st.markdown("- Multi-document RAG with persistent storage")
     st.markdown("- Dual LLM pipeline (factual + conversational)")
+    st.markdown("- **✨ Real-time streaming responses**")
+    st.markdown("- **📊 Enhanced document metadata**")
+    st.markdown("- **🔍 Conversation search & filter**")
+    st.markdown("- Production-grade error handling")
     st.markdown("- Professional UX with keyboard shortcuts")
     st.markdown("- Copy/export functionality")
     st.markdown("- Real-time document management")
-    st.markdown("- **Production-grade error handling** ✨")
