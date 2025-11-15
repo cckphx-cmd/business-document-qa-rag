@@ -716,6 +716,7 @@ with tab1:
             """)
 
 # TAB 2: Brand Voice Assistant
+# TAB 2: Brand Voice Assistant
 with tab2:
     st.markdown("### 🎨 Brand Voice Assistant")
     st.markdown("Transform your communications to match your company's brand voice")
@@ -999,16 +1000,56 @@ TRANSFORMED MESSAGE:"""
                     'type': message_type,
                     'tone': tone_preference,
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'used
+                    'used_brand_guide': using_brand_guide
+                })
+                
+            except Exception as e:
+                st.error(f"Error transforming message: {str(e)}")
+    
+    elif transform_button and not user_message:
+        st.warning("⚠️ Please enter a message to transform")
+    
+    # Examples section
+    st.markdown("---")
+    with st.expander("💡 Example Transformations"):
         st.markdown("""
-        This feature will help you:
-        - Upload company style guides
-        - Transform communications
-        - Ensure brand consistency
-        - Check compliance
+        ### Customer Email - Professional
         
-        **Status:** In Development
+        **Before:**
+        > Hey, your order is gonna be late. Supply chain issues. Sorry about that.
+        
+        **After:**
+        > Thank you for your patience. We're writing to inform you that your order has been delayed due to supply chain constraints. We expect delivery within 3-5 business days and sincerely apologize for any inconvenience. Please contact us if you have questions.
+        
+        ---
+        
+        ### Slack Message - Friendly
+        
+        **Before:**
+        > Meeting moved to 3pm. Be there.
+        
+        **After:**
+        > Hey team! 👋 Quick update: Today's sync is moving to 3pm to accommodate the exec presentation. See you there!
+        
+        ---
+        
+        ### Customer Support - Empathetic
+        
+        **Before:**
+        > We can't give you a refund. It's past 30 days.
+        
+        **After:**
+        > I completely understand your frustration, and I want to help find the best solution. While our standard refund window is 30 days, let me review your account to explore what options might be available to make this right for you.
         """)
+    
+    # Transformation history
+    if st.session_state.get('brand_transformations'):
+        st.markdown("---")
+        with st.expander(f"📜 Transformation History ({len(st.session_state['brand_transformations'])} messages)"):
+            for i, trans in enumerate(reversed(st.session_state['brand_transformations'][-5:]), 1):
+                st.markdown(f"**{trans['timestamp']}** - {trans['type']}")
+                st.caption(f"Original: {trans['original'][:100]}...")
+                st.markdown("---")
 
 # TAB 3: Settings
 with tab3:
