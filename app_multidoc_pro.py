@@ -13,6 +13,129 @@ import time
 
 load_dotenv()
 
+# ============================================================================
+# ERROR HANDLING FUNCTIONS - Production Grade
+# ============================================================================
+
+def check_api_key():
+    """Validate OpenAI API key exists"""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        st.error("⚠️ OpenAI API key not found!")
+        st.info("Please add your OPENAI_API_KEY to Streamlit Cloud secrets or your .env file")
+        st.stop()
+    return api_key
+
+# Check API key on startup
+OPENAI_API_KEY = check_api_key()
+
+def safe_pdf_load(uploaded_file):
+    """Safely load PDF with comprehensive error handling"""
+    tmp_path = None
+    try:
+        # Create temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_path = tmp_file.name
+        
+        # Try to load the PDF
+        loader = PyPDFLoader(tmp_path)
+        pages = loader.load()
+        
+        # Cleanup temp file
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        
+        # Validate content
+        if not pages or len(pages) == 0:
+            st.warning(f"⚠️ '{uploaded_file.name}' appears to be empty or unreadable")
+            return None
+        
+        return pages
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        # Specific error messages
+        if "encrypted" in error_msg or "password" in error_msg:
+            st.error(f"🔒 '{uploaded_file.name}' is password-protected. Please upload an unlocked PDF.")
+        elif "corrupted" in error_msg or "invalid" in error_msg:
+            st.error(f"❌ '{uploaded_file.name}' appears to be corrupted. Please try re-saving the PDF.")
+        else:
+            st.error(f"❌ Could not read '{uploaded_file.name}': {str(e)}")
+            st.info("💡 Please ensure it's a valid, non-protected PDF file")
+        
+        # Cleanup temp file if it exists
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+        
+        return None
+
+def safe_llm_call(llm, prompt, max_retries=3):
+    """Safely call OpenAI with retry logic and comprehensive error handling"""
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(prompt)
+            return response
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Rate limit error
+            if "rate_limit" in error_msg or "429" in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    st.warning(f"⏱️ API rate limit reached. Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    st.error("❌ Rate limit exceeded. Please wait a minute and try again.")
+                    st.info("💡 Tip: Try asking fewer questions at once or wait between queries")
+                    return None
+            
+            # Connection/timeout errors
+            elif any(word in error_msg for word in ["connection", "timeout", "network", "unreachable"]):
+                if attempt < max_retries - 1:
+                    st.warning(f"🔄 Connection issue detected. Retrying... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2)
+                    continue
+                else:
+                    st.error("❌ Cannot connect to OpenAI. Please check your internet connection.")
+                    st.info("💡 Try refreshing the page or checking your network")
+                    return None
+            
+            # Authentication errors
+            elif "authentication" in error_msg or "api key" in error_msg or "401" in error_msg:
+                st.error("🔑 API authentication failed. Please check your OpenAI API key.")
+                st.info("💡 Verify your API key in Settings or Streamlit Cloud secrets")
+                return None
+            
+            # Quota/billing errors
+            elif "quota" in error_msg or "billing" in error_msg or "insufficient" in error_msg:
+                st.error("💳 OpenAI quota exceeded or billing issue detected.")
+                st.info("💡 Check your OpenAI account billing and usage limits at platform.openai.com")
+                return None
+            
+            # General errors
+            else:
+                if attempt < max_retries - 1:
+                    st.warning(f"⚠️ Temporary error. Retrying... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(1)
+                    continue
+                else:
+                    st.error(f"❌ Error: {str(e)}")
+                    st.info("💡 If this persists, try refreshing the page")
+                    return None
+    
+    return None
+
+# ============================================================================
+# END ERROR HANDLING FUNCTIONS
+# ============================================================================
+
 # Feature Toggles
 FEATURES = {
     'dual_llm': True,
@@ -34,21 +157,30 @@ st.set_page_config(
 # Initialize ChromaDB
 @st.cache_resource
 def get_chroma_client():
-    """Initialize persistent ChromaDB client"""
-    client = chromadb.PersistentClient(path="./chroma_db")
-    return client
+    """Initialize persistent ChromaDB client with error handling"""
+    try:
+        client = chromadb.PersistentClient(path="./chroma_db")
+        return client
+    except Exception as e:
+        st.error(f"❌ Database initialization error: {str(e)}")
+        st.info("💡 Try restarting the app or clearing browser cache")
+        st.stop()
 
 @st.cache_resource
 def get_collection():
-    """Get or create ChromaDB collection"""
+    """Get or create ChromaDB collection with error handling"""
     client = get_chroma_client()
     try:
         collection = client.get_collection(name="business_documents")
-    except:
-        collection = client.create_collection(
-            name="business_documents",
-            metadata={"description": "Business document storage"}
-        )
+    except Exception:
+        try:
+            collection = client.create_collection(
+                name="business_documents",
+                metadata={"description": "Business document storage"}
+            )
+        except Exception as e:
+            st.error(f"❌ Could not create document collection: {str(e)}")
+            st.stop()
     return collection
 
 # Load theme CSS with animations
@@ -241,39 +373,49 @@ def get_document_hash(filename):
     return hashlib.md5(filename.encode()).hexdigest()
 
 def add_document_to_chroma(filename, chunks, embeddings):
-    """Add document chunks to ChromaDB"""
-    collection = get_collection()
-    
-    doc_hash = get_document_hash(filename)
-    
-    # Prepare data
-    documents = [chunk.page_content for chunk in chunks]
-    metadatas = [{
-        "source": filename,
-        "page": chunk.metadata.get("page", 0),
-        "doc_hash": doc_hash,
-        "upload_date": datetime.now().isoformat()
-    } for chunk in chunks]
-    ids = [f"{doc_hash}_{i}" for i in range(len(chunks))]
-    
-    # Generate embeddings
-    embeddings_list = embeddings.embed_documents(documents)
-    
-    # Add to collection
-    collection.add(
-        documents=documents,
-        embeddings=embeddings_list,
-        metadatas=metadatas,
-        ids=ids
-    )
-    
-    return doc_hash
+    """Add document chunks to ChromaDB with error handling"""
+    try:
+        collection = get_collection()
+        
+        doc_hash = get_document_hash(filename)
+        
+        # Prepare data
+        documents = [chunk.page_content for chunk in chunks]
+        metadatas = [{
+            "source": filename,
+            "page": chunk.metadata.get("page", 0),
+            "doc_hash": doc_hash,
+            "upload_date": datetime.now().isoformat()
+        } for chunk in chunks]
+        ids = [f"{doc_hash}_{i}" for i in range(len(chunks))]
+        
+        # Generate embeddings with error handling
+        try:
+            embeddings_list = embeddings.embed_documents(documents)
+        except Exception as e:
+            st.error(f"❌ Error generating embeddings: {str(e)}")
+            return None
+        
+        # Add to collection
+        collection.add(
+            documents=documents,
+            embeddings=embeddings_list,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        return doc_hash
+        
+    except Exception as e:
+        st.error(f"❌ Database error: {str(e)}")
+        return None
 
 def get_all_documents():
     """Get list of all documents in ChromaDB"""
-    collection = get_collection()
     try:
+        collection = get_collection()
         results = collection.get()
+        
         if not results['metadatas']:
             return []
         
@@ -289,28 +431,36 @@ def get_all_documents():
                 }
         
         return list(docs.values())
-    except:
+    except Exception as e:
+        st.warning(f"⚠️ Could not load documents: {str(e)}")
         return []
 
 def delete_document(doc_hash):
     """Delete document from ChromaDB"""
-    collection = get_collection()
     try:
+        collection = get_collection()
         results = collection.get(where={"doc_hash": doc_hash})
         if results['ids']:
             collection.delete(ids=results['ids'])
         return True
     except Exception as e:
-        st.error(f"Error deleting document: {e}")
+        st.error(f"❌ Error deleting document: {str(e)}")
         return False
 
 def search_documents(query, k=5):
-    """Search across all documents"""
-    collection = get_collection()
-    embeddings = OpenAIEmbeddings()
-    
+    """Search across all documents with error handling"""
     try:
-        query_embedding = embeddings.embed_query(query)
+        collection = get_collection()
+        embeddings = OpenAIEmbeddings()
+        
+        # Generate query embedding
+        try:
+            query_embedding = embeddings.embed_query(query)
+        except Exception as e:
+            st.error(f"❌ Error processing query: {str(e)}")
+            return []
+        
+        # Search collection
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=k
@@ -328,13 +478,20 @@ def search_documents(query, k=5):
             })
         
         return docs
+        
     except Exception as e:
-        st.error(f"Search error: {e}")
+        st.error(f"❌ Search error: {str(e)}")
+        st.info("💡 Try refreshing the page or rephrasing your question")
         return []
 
 def dual_llm_answer(question, context, mode="both"):
-    factual_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-    conversational_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+    """Generate answers with dual LLM approach and error handling"""
+    try:
+        factual_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        conversational_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+    except Exception as e:
+        st.error(f"❌ Could not initialize AI model: {str(e)}")
+        return {"factual": None, "conversational": None}
     
     factual_prompt = f"""You are a professional business analyst. Provide ONLY factual information from the context.
 
@@ -352,7 +509,11 @@ INSTRUCTIONS:
 
 FACTUAL ANSWER:"""
     
-    factual_response = factual_llm.invoke(factual_prompt)
+    factual_response = safe_llm_call(factual_llm, factual_prompt)
+    
+    if factual_response is None:
+        return {"factual": None, "conversational": None}
+    
     factual_answer = factual_response.content
     
     if mode == "factual":
@@ -372,7 +533,11 @@ FACTUAL VERSION:
 
 CONVERSATIONAL VERSION:"""
     
-    conversational_response = conversational_llm.invoke(conversational_prompt)
+    conversational_response = safe_llm_call(conversational_llm, conversational_prompt)
+    
+    if conversational_response is None:
+        return {"factual": factual_answer, "conversational": None}
+    
     conversational_answer = conversational_response.content
     
     if mode == "conversational":
@@ -462,7 +627,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Built with LangChain & ChromaDB")
-    st.caption("Version 2.0 Pro")
+    st.caption("Version 2.0 Pro + Error Handling")
 
 # Main Header
 st.markdown('<h1 class="main-header">🎯 Business Intelligence Suite</h1>', unsafe_allow_html=True)
@@ -512,7 +677,7 @@ with tab1:
         st.markdown("✅ Persistent storage")
         st.markdown("✅ Smart extraction")
     
-    # Process uploads
+    # Process uploads with safe PDF loading
     if uploaded_files:
         files_to_process = []
         existing_docs = [doc['filename'] for doc in all_documents]
@@ -531,15 +696,14 @@ with tab1:
                 status_text.text(f"Processing {idx + 1}/{len(files_to_process)}: {uploaded_file.name}")
                 progress_bar.progress((idx) / len(files_to_process))
                 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getbuffer())
-                    tmp_path = tmp_file.name
+                # Use safe PDF loading
+                documents = safe_pdf_load(uploaded_file)
+                
+                if documents is None:
+                    continue  # Skip to next file if this one failed
                 
                 try:
-                    loader = PyPDFLoader(tmp_path)
-                    documents = loader.load()
-                    
-                    if documents and len(documents) > 0:
+                    if len(documents) > 0:
                         text_splitter = RecursiveCharacterTextSplitter(
                             chunk_size=500,
                             chunk_overlap=50
@@ -549,13 +713,16 @@ with tab1:
                         if chunks and len(chunks) > 0:
                             embeddings = OpenAIEmbeddings()
                             doc_hash = add_document_to_chroma(uploaded_file.name, chunks, embeddings)
-                            st.success(f"✅ {uploaded_file.name} - {len(chunks)} chunks, {len(documents)} pages")
+                            
+                            if doc_hash:
+                                st.success(f"✅ {uploaded_file.name} - {len(chunks)} chunks, {len(documents)} pages")
+                            else:
+                                st.error(f"❌ Failed to save {uploaded_file.name} to database")
+                        else:
+                            st.warning(f"⚠️ No text extracted from {uploaded_file.name}")
                     
                 except Exception as e:
                     st.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
             
             progress_bar.progress(1.0)
             status_text.text(f"✅ Completed! Processed {len(files_to_process)} document(s)")
@@ -624,22 +791,27 @@ with tab1:
                         if FEATURES['dual_llm']:
                             answers = dual_llm_answer(question, context, mode=llm_mode)
                             
-                            st.session_state['conversation_history'].append({
-                                'question': question,
-                                'answer': answers.get('conversational') or answers.get('factual'),
-                                'factual_answer': answers.get('factual'),
-                                'conversational_answer': answers.get('conversational'),
-                                'sources': sources,
-                                'timestamp': datetime.now().strftime("%H:%M:%S"),
-                                'mode': llm_mode,
-                                'document_count': len(set([s['document'] for s in sources]))
-                            })
-                        
-                        st.session_state['total_questions'] += 1
-                        st.rerun()
+                            # Check if we got valid answers
+                            if answers.get('factual') is None and answers.get('conversational') is None:
+                                st.error("❌ Could not generate answer. Please try again.")
+                            else:
+                                st.session_state['conversation_history'].append({
+                                    'question': question,
+                                    'answer': answers.get('conversational') or answers.get('factual'),
+                                    'factual_answer': answers.get('factual'),
+                                    'conversational_answer': answers.get('conversational'),
+                                    'sources': sources,
+                                    'timestamp': datetime.now().strftime("%H:%M:%S"),
+                                    'mode': llm_mode,
+                                    'document_count': len(set([s['document'] for s in sources]))
+                                })
+                                
+                                st.session_state['total_questions'] += 1
+                                st.rerun()
                         
                 except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+                    st.error(f"❌ Unexpected error: {str(e)}")
+                    st.info("💡 Please try again or rephrase your question")
         
         # Display conversation history with copy buttons
         if st.session_state['conversation_history']:
@@ -716,7 +888,6 @@ with tab1:
             """)
 
 # TAB 2: Brand Voice Assistant
-# TAB 2: Brand Voice Assistant
 with tab2:
     st.markdown("### 🎨 Brand Voice Assistant")
     st.markdown("Transform your communications to match your company's brand voice")
@@ -766,19 +937,14 @@ with tab2:
             status_text.text("📄 Reading brand guidelines...")
             progress_bar.progress(0.2)
             
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(brand_file.getbuffer())
-                tmp_path = tmp.name
+            # Use safe PDF loading
+            docs = safe_pdf_load(brand_file)
             
-            try:
-                # Load document
-                status_text.text("📖 Processing guidelines...")
-                progress_bar.progress(0.4)
-                
-                loader = PyPDFLoader(tmp_path)
-                docs = loader.load()
-                
-                if docs and len(docs) > 0:
+            if docs is None:
+                progress_bar.empty()
+                status_text.empty()
+            else:
+                try:
                     # Split into chunks
                     status_text.text("✂️ Extracting voice patterns...")
                     progress_bar.progress(0.6)
@@ -811,35 +977,39 @@ with tab2:
                         # Prepare embeddings
                         embeddings = OpenAIEmbeddings()
                         docs_text = [chunk.page_content for chunk in chunks]
-                        embeddings_list = embeddings.embed_documents(docs_text)
                         
-                        # Add to collection
-                        brand_collection.add(
-                            documents=docs_text,
-                            embeddings=embeddings_list,
-                            metadatas=[{"source": brand_file.name, "chunk": i} for i in range(len(chunks))],
-                            ids=[f"brand_{i}" for i in range(len(chunks))]
-                        )
-                        
-                        st.session_state['brand_guide_loaded'] = True
-                        st.session_state['brand_guide_name'] = brand_file.name
-                        
-                        progress_bar.progress(1.0)
-                        status_text.text(f"✅ Success! Loaded {len(chunks)} voice patterns from {len(docs)} pages")
-                        
-                        time.sleep(1)
-                        st.balloons()
-                        st.rerun()
+                        try:
+                            embeddings_list = embeddings.embed_documents(docs_text)
+                        except Exception as e:
+                            st.error(f"❌ Error processing brand guide: {str(e)}")
+                            progress_bar.empty()
+                            status_text.empty()
+                        else:
+                            # Add to collection
+                            brand_collection.add(
+                                documents=docs_text,
+                                embeddings=embeddings_list,
+                                metadatas=[{"source": brand_file.name, "chunk": i} for i in range(len(chunks))],
+                                ids=[f"brand_{i}" for i in range(len(chunks))]
+                            )
+                            
+                            st.session_state['brand_guide_loaded'] = True
+                            st.session_state['brand_guide_name'] = brand_file.name
+                            
+                            progress_bar.progress(1.0)
+                            status_text.text(f"✅ Success! Loaded {len(chunks)} voice patterns from {len(docs)} pages")
+                            
+                            time.sleep(1)
+                            st.balloons()
+                            st.rerun()
                     else:
-                        st.error("Could not extract text from the PDF")
-                else:
-                    st.error("PDF appears to be empty")
-                    
-            except Exception as e:
-                st.error(f"Error processing brand guide: {str(e)}")
-            finally:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+                        st.error("Could not extract text from the brand guide")
+                        
+                except Exception as e:
+                    st.error(f"Error processing brand guide: {str(e)}")
+                finally:
+                    progress_bar.empty()
+                    status_text.empty()
     
     # Message Transformation Section
     st.markdown("---")
@@ -897,28 +1067,34 @@ with tab2:
                 using_brand_guide = False
                 
                 if st.session_state['brand_guide_loaded']:
-                    client = get_chroma_client()
-                    brand_collection = client.get_collection("brand_guidelines")
-                    embeddings = OpenAIEmbeddings()
-                    
-                    # Search for relevant brand guidelines
-                    query_text = f"{message_type} {tone_preference} communication style"
-                    query_embedding = embeddings.embed_query(query_text)
-                    
-                    results = brand_collection.query(
-                        query_embeddings=[query_embedding],
-                        n_results=3
-                    )
-                    
-                    if results['documents'] and results['documents'][0]:
-                        brand_context = "\n\n".join(results['documents'][0])
-                        using_brand_guide = True
+                    try:
+                        client = get_chroma_client()
+                        brand_collection = client.get_collection("brand_guidelines")
+                        embeddings = OpenAIEmbeddings()
+                        
+                        # Search for relevant brand guidelines
+                        query_text = f"{message_type} {tone_preference} communication style"
+                        query_embedding = embeddings.embed_query(query_text)
+                        
+                        results = brand_collection.query(
+                            query_embeddings=[query_embedding],
+                            n_results=3
+                        )
+                        
+                        if results['documents'] and results['documents'][0]:
+                            brand_context = "\n\n".join(results['documents'][0])
+                            using_brand_guide = True
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not load brand guidelines: {str(e)}")
                 
                 # Create transformation prompt
-                llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
-                
-                if using_brand_guide:
-                    prompt = f"""You are a professional brand voice consultant. Transform the user's draft message to match the company's brand guidelines.
+                try:
+                    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+                except Exception as e:
+                    st.error(f"❌ Could not initialize AI: {str(e)}")
+                else:
+                    if using_brand_guide:
+                        prompt = f"""You are a professional brand voice consultant. Transform the user's draft message to match the company's brand guidelines.
 
 BRAND GUIDELINES:
 {brand_context}
@@ -939,8 +1115,8 @@ INSTRUCTIONS:
 7. Ensure clarity and impact
 
 TRANSFORMED MESSAGE:"""
-                else:
-                    prompt = f"""Transform this draft message into a professional {message_type} with a {tone_preference} tone.
+                    else:
+                        prompt = f"""Transform this draft message into a professional {message_type} with a {tone_preference} tone.
 
 ORIGINAL DRAFT:
 {user_message}
@@ -953,58 +1129,62 @@ INSTRUCTIONS:
 - Add appropriate greeting/closing if needed
 
 TRANSFORMED MESSAGE:"""
-                
-                response = llm.invoke(prompt)
-                transformed = response.content.strip()
-                
-                # Display results
-                st.markdown("---")
-                st.markdown("### 📊 Transformation Results")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**📝 Original Draft:**")
-                    st.markdown(f'<div class="answer-box" style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 1rem; border-radius: 8px;">{user_message}</div>', unsafe_allow_html=True)
-                    st.caption(f"Words: {len(user_message.split())}")
-                
-                with col2:
-                    st.markdown("**✨ Brand Voice Version:**")
-                    st.markdown(f'<div class="answer-box" style="background: #dcfce7; border-left: 4px solid #22c55e; padding: 1rem; border-radius: 8px;">{transformed}</div>', unsafe_allow_html=True)
-                    st.caption(f"Words: {len(transformed.split())}")
-                
-                # Show which guidelines were used
-                if using_brand_guide:
-                    with st.expander("📚 Brand Guidelines Applied"):
-                        st.markdown("**Relevant sections from your brand guide:**")
-                        for i, section in enumerate(results['documents'][0], 1):
-                            st.markdown(f"**Section {i}:**")
-                            st.caption(section[:400] + ("..." if len(section) > 400 else ""))
-                            st.markdown("---")
-                else:
-                    st.info("💡 Upload your brand guide to use company-specific voice patterns!")
-                
-                # Copy functionality
-                st.markdown("---")
-                st.markdown("**📋 Copy Transformed Message:**")
-                st.code(transformed, language=None)
-                st.caption("↑ Select all and copy (Cmd/Ctrl + C)")
-                
-                # Save to session for potential export
-                if 'brand_transformations' not in st.session_state:
-                    st.session_state['brand_transformations'] = []
-                
-                st.session_state['brand_transformations'].append({
-                    'original': user_message,
-                    'transformed': transformed,
-                    'type': message_type,
-                    'tone': tone_preference,
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'used_brand_guide': using_brand_guide
-                })
+                    
+                    response = safe_llm_call(llm, prompt)
+                    
+                    if response is None:
+                        st.error("❌ Could not transform message. Please try again.")
+                    else:
+                        transformed = response.content.strip()
+                        
+                        # Display results
+                        st.markdown("---")
+                        st.markdown("### 📊 Transformation Results")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**📝 Original Draft:**")
+                            st.markdown(f'<div class="answer-box" style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 1rem; border-radius: 8px;">{user_message}</div>', unsafe_allow_html=True)
+                            st.caption(f"Words: {len(user_message.split())}")
+                        
+                        with col2:
+                            st.markdown("**✨ Brand Voice Version:**")
+                            st.markdown(f'<div class="answer-box" style="background: #dcfce7; border-left: 4px solid #22c55e; padding: 1rem; border-radius: 8px;">{transformed}</div>', unsafe_allow_html=True)
+                            st.caption(f"Words: {len(transformed.split())}")
+                        
+                        # Show which guidelines were used
+                        if using_brand_guide:
+                            with st.expander("📚 Brand Guidelines Applied"):
+                                st.markdown("**Relevant sections from your brand guide:**")
+                                for i, section in enumerate(results['documents'][0], 1):
+                                    st.markdown(f"**Section {i}:**")
+                                    st.caption(section[:400] + ("..." if len(section) > 400 else ""))
+                                    st.markdown("---")
+                        else:
+                            st.info("💡 Upload your brand guide to use company-specific voice patterns!")
+                        
+                        # Copy functionality
+                        st.markdown("---")
+                        st.markdown("**📋 Copy Transformed Message:**")
+                        st.code(transformed, language=None)
+                        st.caption("↑ Select all and copy (Cmd/Ctrl + C)")
+                        
+                        # Save to session for potential export
+                        if 'brand_transformations' not in st.session_state:
+                            st.session_state['brand_transformations'] = []
+                        
+                        st.session_state['brand_transformations'].append({
+                            'original': user_message,
+                            'transformed': transformed,
+                            'type': message_type,
+                            'tone': tone_preference,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'used_brand_guide': using_brand_guide
+                        })
                 
             except Exception as e:
-                st.error(f"Error transforming message: {str(e)}")
+                st.error(f"❌ Unexpected error: {str(e)}")
     
     elif transform_button and not user_message:
         st.warning("⚠️ Please enter a message to transform")
@@ -1119,3 +1299,4 @@ with tab3:
     st.markdown("- Professional UX with keyboard shortcuts")
     st.markdown("- Copy/export functionality")
     st.markdown("- Real-time document management")
+    st.markdown("- **Production-grade error handling** ✨")
