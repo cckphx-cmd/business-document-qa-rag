@@ -254,7 +254,7 @@ def load_theme_css(theme_name):
     return ""
 
 # Get selected theme
-selected_theme = st.session_state.get('selected_theme', 'current')
+selected_theme = 'readable'
 theme_css = load_theme_css(selected_theme)
 
 # Enhanced CSS with animations and better UX

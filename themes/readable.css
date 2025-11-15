@@ -1,0 +1,32 @@
+/* EMERGENCY READABLE THEME */
+.stApp {
+    background-color: #1a1a1a !important;
+    color: #ffffff !important;
+}
+
+.stMarkdown, .stMarkdown p, .stText {
+    color: #ffffff !important;
+}
+
+.main-header {
+    color: #ffffff !important;
+}
+
+.sub-header {
+    color: #cccccc !important;
+}
+
+.stButton > button {
+    background-color: #4CAF50 !important;
+    color: white !important;
+}
+
+.stTextInput input, .stTextArea textarea {
+    background-color: #2a2a2a !important;
+    color: #ffffff !important;
+}
+
+/* Make everything readable */
+* {
+    color: #ffffff !important;
+}
