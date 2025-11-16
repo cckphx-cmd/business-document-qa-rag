@@ -254,7 +254,7 @@ def load_theme_css(theme_name):
     return ""
 
 # Get selected theme
-selected_theme = 'readable'
+selected_theme = 'soft-executive-minimal'
 theme_css = load_theme_css(selected_theme)
 
 # Enhanced CSS with animations and better UX
